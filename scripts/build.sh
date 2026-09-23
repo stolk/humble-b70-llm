@@ -10,6 +10,8 @@
 #
 #   vllm             upstream 8e6d8e4f6a + patches/vllm/0001
 #                    + drop the unresolvable triton==3.7.2+xpu pin
+#                    + host-staged all-reduce through /dev/shm, not gloo
+#                      (VLLM_XPU_HOST_STAGED_SHM=1; TP=2 prefill 419 -> 1479 tok/s)
 #   vllm-xpu-kernels upstream v0.1.15 + #600 (GDN ragged spec-decode fix,
 #                    from main) + patches/vllm-xpu-kernels/0001
 #                    + the two source files 0001 references but never ships
@@ -20,7 +22,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE"
 
 VLLM_URL=https://github.com/stolk/vllm.git
-VLLM_SHA=69cfb236734c4dfc311656b804f0caf7da6336ba
+VLLM_SHA=0f2e5cf6a38b90eb2dddaa88e7a2738735c92ddf
 KERNELS_URL=https://github.com/stolk/vllm-xpu-kernels.git
 KERNELS_SHA=789d9a1383b4fd3ee54f7cfe8703a054196708da
 

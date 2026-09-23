@@ -44,6 +44,9 @@ envs+=(CCL_TOPO_P2P_ACCESS=0 CCL_ZE_IPC_EXCHANGE=pidfd CCL_ATL_TRANSPORT=ofi)
 envs+=(ZE_FLAT_DEVICE_HIERARCHY=COMPOSITE)
 # host-staged TP2 collectives (see docs/hardware.md — no P2P required)
 envs+=(VLLM_XPU_HOST_STAGED_COLLECTIVES=1)
+# move staged all-reduce data through /dev/shm instead of gloo (~0.6 GB/s):
+# TP2 prefill 419 -> 1479 tok/s on 2x B70, decode unchanged
+envs+=(VLLM_XPU_HOST_STAGED_SHM=1)
 # Distro libstdc++ note: some distro level-zero loaders need a newer
 # libstdc++.so.6 than the Python env bundles. If the server crashes at dlopen
 # with a GLIBCXX_3.4.x symbol error, export LD_PRELOAD to the system
