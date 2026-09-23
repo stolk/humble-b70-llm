@@ -10,8 +10,11 @@
 #
 #   vllm             upstream 8e6d8e4f6a + patches/vllm/0001
 #                    + drop the unresolvable triton==3.7.2+xpu pin
-#   vllm-xpu-kernels upstream 27214a3d99 + patches/vllm-xpu-kernels/0001
+#   vllm-xpu-kernels upstream v0.1.15 + #600 (GDN ragged spec-decode fix,
+#                    from main) + patches/vllm-xpu-kernels/0001
 #                    + the two source files 0001 references but never ships
+#                    (branch humble-b70-v0.1.15; kernels main needs torch
+#                    2.14, which vLLM does not support yet)
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE"
@@ -19,7 +22,7 @@ cd "$HERE"
 VLLM_URL=https://github.com/stolk/vllm.git
 VLLM_SHA=69cfb236734c4dfc311656b804f0caf7da6336ba
 KERNELS_URL=https://github.com/stolk/vllm-xpu-kernels.git
-KERNELS_SHA=e6a9141dda3ae342d90831c308f377ce62ad6972
+KERNELS_SHA=789d9a1383b4fd3ee54f7cfe8703a054196708da
 
 echo "== humble-b70 build =="
 echo "vLLM:    $VLLM_SHA"

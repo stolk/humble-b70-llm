@@ -12,7 +12,8 @@ faith, but because everything that affects the result is pinned or measured.
 > builds from pinned commits on two source forks instead of applying
 > `patches/` to upstream:
 > [stolk/vllm@humble-b70](https://github.com/stolk/vllm/tree/humble-b70) and
-> [stolk/vllm-xpu-kernels@humble-b70](https://github.com/stolk/vllm-xpu-kernels/tree/humble-b70).
+> [stolk/vllm-xpu-kernels@humble-b70-v0.1.15](https://github.com/stolk/vllm-xpu-kernels/tree/humble-b70-v0.1.15)
+> (upstream v0.1.15 + GDN fix #600).
 > The kernels patch as published references two source files it never ships
 > (`int8_quant.cpp`, `int8_gemm_w8a8.h`; upstream issues #1, #3), so it cannot
 > build; the kernels fork adds them. `scripts/build.sh` also carries fixes for
@@ -167,7 +168,8 @@ gate, with the same number you can re-derive from the reference JSONs.
    build == what produced the numbers.
    *(This fork: `patches/` is kept as the historical record of those
    deltas. What is built is the pinned fork commits in `scripts/build.sh`,
-   whose first commits are these patches verbatim.)*
+   which carry these patches as commits: verbatim on vllm, and on the
+   kernels rebased onto v0.1.15 with append-only conflicts resolved.)*
 2. **Binaries are self-tested, not hash-gated.** Ahead-of-time SYCL builds
    differ by toolchain; we never hard-check AOT hashes. `verify-install.sh`
    registers ops, runs a smoke generation, and checks the deterministic
