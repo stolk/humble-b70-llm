@@ -1,40 +1,67 @@
 #!/usr/bin/env bash
-# Build the humble-b70 stack from pinned sources + patches.
+# Build the humble-b70 stack from pinned fork commits.
 # Produces: venv with vLLM (patched) and the kernels wheel (patched).
+#
+# Sources come from forks that carry the patches as commits, instead of
+# applying patches/ onto upstream. The old apply step ran as
+# `git apply ... 2>/dev/null || true`, so a patch that failed to apply was
+# silently skipped and only surfaced later as a confusing build error.
+# patches/ is kept as the record of the original upstream deltas.
+#
+#   vllm             upstream 8e6d8e4f6a + patches/vllm/0001
+#                    + drop the unresolvable triton==3.7.2+xpu pin
+#   vllm-xpu-kernels upstream 27214a3d99 + patches/vllm-xpu-kernels/0001
+#                    + the two source files 0001 references but never ships
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$HERE"
 
-VLLM_BASE="$(cat "$HERE/patches/vllm/BASE_COMMIT.txt" | head -1)"
-KERNELS_BASE="$(cat "$HERE/patches/vllm-xpu-kernels/BASE_COMMIT.txt" | head -1)"
+VLLM_URL=https://github.com/stolk/vllm.git
+VLLM_SHA=69cfb236734c4dfc311656b804f0caf7da6336ba
+KERNELS_URL=https://github.com/stolk/vllm-xpu-kernels.git
+KERNELS_SHA=e6a9141dda3ae342d90831c308f377ce62ad6972
+FORK_BRANCH=humble-b70
 
 echo "== humble-b70 build =="
-echo "vLLM base:    $VLLM_BASE"
-echo "kernels base: $KERNELS_BASE"
+echo "vLLM:    $VLLM_SHA"
+echo "kernels: $KERNELS_SHA"
 
-command -v uv >/dev/null || python3 -m pip install --user uv
+# `pip install --user uv` fails on PEP 668 distros (Debian/Ubuntu system
+# Python is "externally managed"), so bootstrap uv into a private venv.
+if ! command -v uv >/dev/null; then
+  [[ -x .uvenv/bin/uv ]] || { python3 -m venv .uvenv && .uvenv/bin/pip install -q uv; }
+  export PATH="$HERE/.uvenv/bin:$PATH"
+fi
 
-# 1. vLLM source at the pinned base + our patches
-if [[ ! -d src/vllm ]]; then
-  git clone https://github.com/vllm-project/vllm.git src/vllm
-  git -C src/vllm checkout "$VLLM_BASE"
-fi
-if ! git -C src/vllm apply --check "$HERE/patches/vllm/"*.patch 2>/dev/null; then
-  echo "vLLM patches already applied (or conflict) — skipping apply."
-fi
-git -C src/vllm apply "$HERE/patches/vllm/"*.patch 2>/dev/null || true
+# Check out a pinned commit, cloning or fetching from the fork only if needed.
+# Refuses to touch a tree with uncommitted changes to tracked files, rather
+# than silently discarding local work.
+checkout_pinned() {
+  local dir=$1 url=$2 sha=$3
+  [[ -d $dir/.git ]] || git clone "$url" "$dir"
+  if ! git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null; then
+    git -C "$dir" fetch "$url" "$FORK_BRANCH"
+  fi
+  git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null ||
+    { echo "ERROR: $sha not found on $url ($FORK_BRANCH)" >&2; exit 1; }
+  if [[ -n $(git -C "$dir" status --porcelain --untracked-files=no) ]]; then
+    echo "ERROR: $dir has uncommitted changes; commit or stash them first" >&2
+    exit 1
+  fi
+  git -C "$dir" checkout -q --detach "$sha"
+}
 
-# 2. kernels source at the pinned base + our patch
-if [[ ! -d src/vllm-xpu-kernels ]]; then
-  git clone https://github.com/vllm-project/vllm-xpu-kernels.git src/vllm-xpu-kernels
-  git -C src/vllm-xpu-kernels checkout "$KERNELS_BASE"
-fi
-git -C src/vllm-xpu-kernels apply --check "$HERE/patches/vllm-xpu-kernels/"*.patch 2>/dev/null || true
-git -C src/vllm-xpu-kernels apply "$HERE/patches/vllm-xpu-kernels/"*.patch 2>/dev/null || true
+# 1-2. vLLM and kernels sources at the pinned fork commits
+checkout_pinned src/vllm "$VLLM_URL" "$VLLM_SHA"
+checkout_pinned src/vllm-xpu-kernels "$KERNELS_URL" "$KERNELS_SHA"
 
 # 3. venv + torch (Intel XPU wheels; an extra index is required)
-uv venv --python 3.12 .venv
+uv venv --seed --clear --python 3.12 .venv  # --seed: newer uv omits pip; --clear: idempotent on rerun
+# The Intel index in the original script no longer serves torch at all, and a
+# bare "torch==2.13.0" resolves from PyPI as the CUDA build (+cu130, xpu
+# unavailable). The XPU wheels now live on PyTorch's own channel.
 "$HERE/.venv/bin/pip" install --extra-index-url \
-  https://pytorch-extension.intel.com/release-whl/stable/xpu/us/ \
+  https://download.pytorch.org/whl/xpu \
   "torch==2.13.0+xpu"
 
 # 4. kernels wheel (source build; see docs/drivers.md for toolchain)
@@ -45,13 +72,25 @@ uv venv --python 3.12 .venv
 export MAX_JOBS="${MAX_JOBS:-6}"
 export VLLM_CHUNK_PREFILL_CONFIG=chunk_prefill_default.conf
 export VLLM_PAGED_DECODE_CONFIG=paged_decode_default.conf
-"$HERE/.venv/bin/pip" install numpy "cmake==3.31.8" ninja \
+# cmake 3.31.8 (original pin) is not on PyPI: the series goes 3.31.6 -> 3.31.10.
+# setuptools_rust: needed by a vLLM build dependency now, absent from the
+# original list (ModuleNotFoundError during `pip install -e src/vllm`).
+"$HERE/.venv/bin/pip" install numpy "cmake==3.31.10" ninja setuptools_rust \
   "setuptools>=77,<80" setuptools-scm wheel build
-(cd src/vllm-xpu-kernels && \
+# setup.py resolves `cmake` from PATH: without the venv first it picks the
+# system CMake (4.x here), which fails in FindPython/Support.cmake. Use the
+# pinned 3.31.x that was just installed into the venv.
+(cd src/vllm-xpu-kernels && PATH="$HERE/.venv/bin:$PATH" \
   "$HERE/.venv/bin/python" setup.py bdist_wheel \
     --dist-dir "$HERE/dist" --py-limited-api=cp38)
 
 # 5. install vLLM (editable) + kernels wheel
+# Upstream requirements/xpu.txt pins triton==3.7.2+xpu, Intel's "compatibility
+# shim" package, which is not on any reachable index; the fork drops that pin.
+# The real package is triton-xpu, on the PyTorch XPU channel at 3.7.2 -- the
+# same version the working container ships.
+"$HERE/.venv/bin/pip" install --extra-index-url \
+  https://download.pytorch.org/whl/xpu "triton-xpu==3.7.2"
 "$HERE/.venv/bin/pip" install --no-build-isolation -e src/vllm
 "$HERE/.venv/bin/pip" install --force-reinstall --no-deps dist/vllm_xpu_kernels-*.whl
 

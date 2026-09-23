@@ -8,6 +8,17 @@ The goal of this repository is that a stranger who clones it, reads it, and
 follows `QUICKSTART.md` lands on the same numbers we publish — not because of
 faith, but because everything that affects the result is pinned or measured.
 
+> **This fork** ([stolk/humble-b70-llm](https://github.com/stolk/humble-b70-llm))
+> builds from pinned commits on two source forks instead of applying
+> `patches/` to upstream:
+> [stolk/vllm@humble-b70](https://github.com/stolk/vllm/tree/humble-b70) and
+> [stolk/vllm-xpu-kernels@humble-b70](https://github.com/stolk/vllm-xpu-kernels/tree/humble-b70).
+> The kernels patch as published references two source files it never ships
+> (`int8_quant.cpp`, `int8_gemm_w8a8.h`; upstream issues #1, #3), so it cannot
+> build; the kernels fork adds them. `scripts/build.sh` also carries fixes for
+> toolchain drift (torch/triton-xpu indexes, cmake pin, uv bootstrap; issue #4).
+> You only clone this repo: `build.sh` fetches the two source forks itself.
+
 ## LocalMaxxing-approved speeds (headline)
 
 Decode rate as measured by the LocalMaxxing platform (their protocol —
@@ -154,6 +165,9 @@ gate, with the same number you can re-derive from the reference JSONs.
    pinned upstream commits ([vllm](patches/vllm/BASE_COMMIT.txt),
    [kernels](patches/vllm-xpu-kernels/BASE_COMMIT.txt)). Clone + apply +
    build == what produced the numbers.
+   *(This fork: `patches/` is kept as the historical record of those
+   deltas. What is built is the pinned fork commits in `scripts/build.sh`,
+   whose first commits are these patches verbatim.)*
 2. **Binaries are self-tested, not hash-gated.** Ahead-of-time SYCL builds
    differ by toolchain; we never hard-check AOT hashes. `verify-install.sh`
    registers ops, runs a smoke generation, and checks the deterministic

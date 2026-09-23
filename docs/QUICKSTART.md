@@ -25,7 +25,7 @@ bash scripts/verify-install.sh --host-only   # sanity: xpu-smi shows B70
 Native path (what the reference machine runs):
 
 ```bash
-bash scripts/build.sh               # venv + apply patches + build kernels wheel
+bash scripts/build.sh               # venv + fetch pinned fork sources + build kernels wheel
 ```
 
 Container path: not yet provided. The native path above is the
