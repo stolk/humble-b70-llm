@@ -20,7 +20,6 @@ VLLM_URL=https://github.com/stolk/vllm.git
 VLLM_SHA=69cfb236734c4dfc311656b804f0caf7da6336ba
 KERNELS_URL=https://github.com/stolk/vllm-xpu-kernels.git
 KERNELS_SHA=e6a9141dda3ae342d90831c308f377ce62ad6972
-FORK_BRANCH=humble-b70
 
 echo "== humble-b70 build =="
 echo "vLLM:    $VLLM_SHA"
@@ -39,14 +38,22 @@ fi
 checkout_pinned() {
   local dir=$1 url=$2 sha=$3
   [[ -d $dir/.git ]] || git clone "$url" "$dir"
+  # Fetch every fork branch, so a pin may live on any of them.
   if ! git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null; then
-    git -C "$dir" fetch "$url" "$FORK_BRANCH"
+    git -C "$dir" fetch "$url" '+refs/heads/*:refs/remotes/fork/*'
   fi
   git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null ||
-    { echo "ERROR: $sha not found on $url ($FORK_BRANCH)" >&2; exit 1; }
+    { echo "ERROR: $sha not found on any branch of $url" >&2; exit 1; }
   if [[ -n $(git -C "$dir" status --porcelain --untracked-files=no) ]]; then
     echo "ERROR: $dir has uncommitted changes; commit or stash them first" >&2
     exit 1
+  fi
+  # A build dir from another commit is stale: CMake keeps dependency pins such
+  # as CUTLASS_REVISION in CMakeCache.txt, so a new checkout would compile
+  # against the old sycl-tla headers (seen as "undeclared identifier
+  # 'ReduceMode'" after moving the kernels to v0.1.15).
+  if [[ $(git -C "$dir" rev-parse HEAD 2>/dev/null) != "$sha" ]]; then
+    rm -rf "$dir/build" "$dir/.deps"
   fi
   git -C "$dir" checkout -q --detach "$sha"
 }
