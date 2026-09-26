@@ -8,23 +8,27 @@
 # silently skipped and only surfaced later as a confusing build error.
 # patches/ is kept as the record of the original upstream deltas.
 #
-#   vllm             upstream 8e6d8e4f6a + patches/vllm/0001
-#                    + drop the unresolvable triton==3.7.2+xpu pin
+#   vllm             upstream main 77871126f9 (2026-09-26, torch 2.14)
+#                    + patches/vllm/0001 (host-staged collectives, INT8
+#                      lm_head; conflicts with upstream's batch-invariant
+#                      collectives resolved, its own mamba_utils pointer fix
+#                      dropped as upstream has the same one)
 #                    + host-staged all-reduce through /dev/shm, not gloo
 #                      (VLLM_XPU_HOST_STAGED_SHM=1; TP=2 prefill 419 -> 1479 tok/s)
-#   vllm-xpu-kernels upstream v0.1.15 + #600 (GDN ragged spec-decode fix,
-#                    from main) + patches/vllm-xpu-kernels/0001
+#                    (branch humble-b70-next)
+#   vllm-xpu-kernels upstream release/0.1.15.4 (what vLLM main pins; has #600)
+#                    + patches/vllm-xpu-kernels/0001
 #                    + the two source files 0001 references but never ships
-#                    (branch humble-b70-v0.1.15; kernels main needs torch
-#                    2.14, which vLLM does not support yet)
+#                    + primitive-cache fix for bf16/fp16 INT8 weight scales
+#                    (branch humble-b70-v0.1.15.4)
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE"
 
 VLLM_URL=https://github.com/stolk/vllm.git
-VLLM_SHA=0f2e5cf6a38b90eb2dddaa88e7a2738735c92ddf
+VLLM_SHA=bfc6e84b14e99a01c7e736fc7feb43e647c3422f
 KERNELS_URL=https://github.com/stolk/vllm-xpu-kernels.git
-KERNELS_SHA=789d9a1383b4fd3ee54f7cfe8703a054196708da
+KERNELS_SHA=3a49521f0fbf000aaf9aa0318f095cd1dab571bc
 
 echo "== humble-b70 build =="
 echo "vLLM:    $VLLM_SHA"
@@ -74,14 +78,25 @@ uv venv --seed --clear --python 3.12 .venv  # --seed: newer uv omits pip; --clea
 # unavailable). The XPU wheels now live on PyTorch's own channel.
 "$HERE/.venv/bin/pip" install --extra-index-url \
   https://download.pytorch.org/whl/xpu \
-  "torch==2.13.0+xpu"
+  "torch==2.14.0+xpu"
 
 # 4. kernels wheel (source build; see docs/drivers.md for toolchain)
 #    - oneAPI compiler on PATH (source setvars.sh or install via apt)
 #    - the reduced attention presets avoid compiling unused template variants
 #      (and their 7-12 GB compiler peaks)
-#    - MAX_JOBS defaults to 6; lower it on lower-RAM hosts (fat units can OOM)
-export MAX_JOBS="${MAX_JOBS:-6}"
+#    - MAX_JOBS defaults to 12, sized for 128 GB RAM: each chunk_prefill
+#      attention unit peaks near 7 GB in the device compiler, and
+#      grouped_gemm_xe2.cpp alone reaches 33 GB. 10 jobs peaked at 93 GB.
+#      Use about 5 on a 64 GB host.
+export MAX_JOBS="${MAX_JOBS:-12}"
+#    - GPU targets: only the B70 (Battlemage G31, PCI 0xe223). Upstream also
+#      builds for Ponte Vecchio, the B580 (bmg-g21) and Crescent Island
+#      (Xe3P: ~150 extra attention units under csrc/xpu/attn/xe_3). None of
+#      the humble-b70 changes are architecture-specific. Override these to
+#      build for other cards.
+export VLLM_XPU_ENABLE_XE3P="${VLLM_XPU_ENABLE_XE3P:-OFF}"
+export VLLM_XPU_AOT_DEVICES="${VLLM_XPU_AOT_DEVICES-bmg-g31}"
+export VLLM_XPU_XE2_AOT_DEVICES="${VLLM_XPU_XE2_AOT_DEVICES-bmg-g31}"
 export VLLM_CHUNK_PREFILL_CONFIG=chunk_prefill_default.conf
 export VLLM_PAGED_DECODE_CONFIG=paged_decode_default.conf
 # cmake 3.31.8 (original pin) is not on PyPI: the series goes 3.31.6 -> 3.31.10.
@@ -97,13 +112,20 @@ export VLLM_PAGED_DECODE_CONFIG=paged_decode_default.conf
     --dist-dir "$HERE/dist" --py-limited-api=cp38)
 
 # 5. install vLLM (editable) + kernels wheel
-# Upstream requirements/xpu.txt pins triton==3.7.2+xpu, Intel's "compatibility
-# shim" package, which is not on any reachable index; the fork drops that pin.
-# The real package is triton-xpu, on the PyTorch XPU channel at 3.7.2 -- the
-# same version the working container ships.
+# The real Triton for XPU is triton-xpu, on the PyTorch XPU channel; it must
+# match the torch release (3.8.0 for torch 2.14).
 "$HERE/.venv/bin/pip" install --extra-index-url \
-  https://download.pytorch.org/whl/xpu "triton-xpu==3.7.2"
-"$HERE/.venv/bin/pip" install --no-build-isolation -e src/vllm
+  https://download.pytorch.org/whl/xpu "triton-xpu==3.8.0"
+# vLLM's own compile units are light; VLLM_MAX_JOBS lets them use more cores
+# than the memory-hungry kernels build above.
+# requirements/xpu.txt names wheels.vllm.ai as an extra index (for the
+# triton==3.8.0+xpu shim, which just requires triton-xpu), but pip ignores
+# index lines when it reads requirements through setup.py. Pass it here.
+MAX_JOBS="${VLLM_MAX_JOBS:-$MAX_JOBS}" \
+  "$HERE/.venv/bin/pip" install --no-build-isolation \
+    --extra-index-url https://wheels.vllm.ai/xpu/ \
+    --extra-index-url https://download.pytorch.org/whl/xpu \
+    -e src/vllm
 "$HERE/.venv/bin/pip" install --force-reinstall --no-deps dist/vllm_xpu_kernels-*.whl
 
 echo "== done. venv at .venv =="
