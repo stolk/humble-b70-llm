@@ -47,6 +47,11 @@ envs+=(VLLM_XPU_HOST_STAGED_COLLECTIVES=1)
 # move staged all-reduce data through /dev/shm instead of gloo (~0.6 GB/s):
 # TP2 prefill 419 -> 1479 tok/s on 2x B70, decode unchanged
 envs+=(VLLM_XPU_HOST_STAGED_SHM=1)
+# oneCCL 2022.1 (torch 2.14) loads its backend as a plugin by bare name
+# (libccl.so.1 in the venv's lib/) and fails with "Could not load any plugin"
+# unless that directory is on the search path. Only the venv's own lib/: an
+# inherited oneAPI LD_LIBRARY_PATH would mix in another SYCL/UR runtime.
+envs+=(LD_LIBRARY_PATH="$HERE/.venv/lib")
 # Distro libstdc++ note: some distro level-zero loaders need a newer
 # libstdc++.so.6 than the Python env bundles. If the server crashes at dlopen
 # with a GLIBCXX_3.4.x symbol error, export LD_PRELOAD to the system
