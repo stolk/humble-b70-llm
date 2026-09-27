@@ -127,6 +127,14 @@ MAX_JOBS="${VLLM_MAX_JOBS:-$MAX_JOBS}" \
     --extra-index-url https://download.pytorch.org/whl/xpu \
     -e src/vllm
 "$HERE/.venv/bin/pip" install --force-reinstall --no-deps dist/vllm_xpu_kernels-*.whl
+# 6. oneCCL 2022.1.2 over torch 2.14's exact pin (2022.1.1). In 2022.1.1 an
+#    all-reduce captured in an XPU graph is a no-op on replay: each rank keeps
+#    its own partial sum, so TP=2 with graphs (the default) decodes garbage
+#    and the quality gate fails; eager mode and TP=1 are fine. 2022.1.2 (and
+#    2022.0) replay correctly. Repro: /usr/src/intel/repro/xccl_graph_replay.py.
+#    Last step on purpose: resolving vLLM's dependencies would put torch's
+#    pinned 2022.1.1 back.
+"$HERE/.venv/bin/pip" install --no-deps "oneccl==2022.1.2" "oneccl-devel==2022.1.2"
 
 echo "== done. venv at .venv =="
 echo "Next: bash scripts/model.sh fetch ; bash scripts/serve.sh"
