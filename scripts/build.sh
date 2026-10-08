@@ -16,11 +16,12 @@
 #                    + host-staged all-reduce through /dev/shm, not gloo
 #                      (VLLM_XPU_HOST_STAGED_SHM=1; TP=2 prefill 419 -> 1479 tok/s)
 #                    (branch humble-b70-next)
-#   vllm-xpu-kernels upstream release/0.1.15.4 (what vLLM main pins; has #600)
+#   vllm-xpu-kernels upstream main (bdf9ac0; has #600)
 #                    + patches/vllm-xpu-kernels/0001
 #                    + the two source files 0001 references but never ships
 #                    + primitive-cache fix for bf16/fp16 INT8 weight scales
-#                    (branch humble-b70-v0.1.15.4)
+#                    + oneDNN v3.14-rc instead of rls-v3.13
+#                    (branch humble-b70-main)
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE"
@@ -28,7 +29,7 @@ cd "$HERE"
 VLLM_URL=https://github.com/stolk/vllm.git
 VLLM_SHA=bfc6e84b14e99a01c7e736fc7feb43e647c3422f
 KERNELS_URL=https://github.com/stolk/vllm-xpu-kernels.git
-KERNELS_SHA=3a49521f0fbf000aaf9aa0318f095cd1dab571bc
+KERNELS_SHA=63ef9b9bf668ebfdfa871c74460b8820b6024b48
 
 echo "== humble-b70 build =="
 echo "vLLM:    $VLLM_SHA"
