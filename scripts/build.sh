@@ -108,9 +108,20 @@ export VLLM_PAGED_DECODE_CONFIG=paged_decode_default.conf
 # setup.py resolves `cmake` from PATH: without the venv first it picks the
 # system CMake (4.x here), which fails in FindPython/Support.cmake. Use the
 # pinned 3.31.x that was just installed into the venv.
+# The wheel is built into an empty directory and then moved to dist/, so
+# KERNELS_WHEEL names exactly this build even when dist/ keeps older wheels
+# (e.g. one kept for rollback).
+WHEEL_TMP=$(mktemp -d)
 (cd src/vllm-xpu-kernels && PATH="$HERE/.venv/bin:$PATH" \
   "$HERE/.venv/bin/python" setup.py bdist_wheel \
-    --dist-dir "$HERE/dist" --py-limited-api=cp38)
+    --dist-dir "$WHEEL_TMP" --py-limited-api=cp38)
+wheels=("$WHEEL_TMP"/vllm_xpu_kernels-*.whl)
+[[ ${#wheels[@]} -eq 1 && -f ${wheels[0]} ]] ||
+  { echo "ERROR: expected one kernels wheel in $WHEEL_TMP" >&2; exit 1; }
+mkdir -p dist
+mv -f "${wheels[0]}" dist/
+rmdir "$WHEEL_TMP"
+KERNELS_WHEEL="dist/$(basename "${wheels[0]}")"
 
 # 5. install vLLM (editable) + kernels wheel
 # The real Triton for XPU is triton-xpu, on the PyTorch XPU channel; it must
@@ -127,7 +138,7 @@ MAX_JOBS="${VLLM_MAX_JOBS:-$MAX_JOBS}" \
     --extra-index-url https://wheels.vllm.ai/xpu/ \
     --extra-index-url https://download.pytorch.org/whl/xpu \
     -e src/vllm
-"$HERE/.venv/bin/pip" install --force-reinstall --no-deps dist/vllm_xpu_kernels-*.whl
+"$HERE/.venv/bin/pip" install --force-reinstall --no-deps "$KERNELS_WHEEL"
 # 6. oneCCL 2022.1.2 over torch 2.14's exact pin (2022.1.1). In 2022.1.1 an
 #    all-reduce captured in an XPU graph is a no-op on replay: each rank keeps
 #    its own partial sum, so TP=2 with graphs (the default) decodes garbage
