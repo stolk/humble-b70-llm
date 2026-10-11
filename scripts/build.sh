@@ -15,6 +15,9 @@
 #                      dropped as upstream has the same one)
 #                    + host-staged all-reduce through /dev/shm, not gloo
 #                      (VLLM_XPU_HOST_STAGED_SHM=1; TP=2 prefill 419 -> 1479 tok/s)
+#                    + all-reduce by writing into the peer GPU's memory
+#                      (VLLM_XPU_PEER_ALLREDUCE=1, needs ext/xpu_peer;
+#                      TP=2 prefill 1451 -> 2137 tok/s at 8K)
 #                    (branch humble-b70-next)
 #   vllm-xpu-kernels upstream main (bdf9ac0; has #600)
 #                    + patches/vllm-xpu-kernels/0001
@@ -22,12 +25,14 @@
 #                    + primitive-cache fix for bf16/fp16 INT8 weight scales
 #                    + oneDNN v3.14-rc instead of rls-v3.13
 #                    (branch humble-b70-main)
+#   ext/xpu_peer     all-reduce through peer GPU memory (Level Zero IPC),
+#                    built from this repo
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE"
 
 VLLM_URL=https://github.com/stolk/vllm.git
-VLLM_SHA=bfc6e84b14e99a01c7e736fc7feb43e647c3422f
+VLLM_SHA=9dd3b25953e5d634647b3c070c6e75f9576dd8b0
 KERNELS_URL=https://github.com/stolk/vllm-xpu-kernels.git
 KERNELS_SHA=63ef9b9bf668ebfdfa871c74460b8820b6024b48
 
@@ -147,6 +152,11 @@ MAX_JOBS="${VLLM_MAX_JOBS:-$MAX_JOBS}" \
 #    Last step on purpose: resolving vLLM's dependencies would put torch's
 #    pinned 2022.1.1 back.
 "$HERE/.venv/bin/pip" install --no-deps "oneccl==2022.1.2" "oneccl-devel==2022.1.2"
+# 7. xpu_peer: TP=2 all-reduce by writing into the peer GPU's memory
+#    (VLLM_XPU_PEER_ALLREDUCE=1). Built against the torch just installed,
+#    with the oneAPI compiler on PATH; tests in ext/xpu_peer/tests.
+PATH="$HERE/.venv/bin:$PATH" "$HERE/.venv/bin/pip" install \
+  --no-build-isolation --no-deps --no-index ./ext/xpu_peer
 
 echo "== done. venv at .venv =="
 echo "Next: bash scripts/model.sh fetch ; bash scripts/serve.sh"
