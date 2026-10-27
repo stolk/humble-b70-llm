@@ -8,17 +8,15 @@
 # silently skipped and only surfaced later as a confusing build error.
 # patches/ is kept as the record of the original upstream deltas.
 #
-#   vllm             upstream main 77871126f9 (2026-09-26, torch 2.14)
-#                    + patches/vllm/0001 (host-staged collectives, INT8
-#                      lm_head; conflicts with upstream's batch-invariant
-#                      collectives resolved, its own mamba_utils pointer fix
-#                      dropped as upstream has the same one)
+#   vllm             upstream main 2b08392a5f (2026-10-27, torch 2.14)
+#                    + production deltas: host-staged collectives, INT8
+#                      lm_head, GDN fallback for a partial final MTP group
 #                    + host-staged all-reduce through /dev/shm, not gloo
 #                      (VLLM_XPU_HOST_STAGED_SHM=1; TP=2 prefill 419 -> 1479 tok/s)
 #                    + all-reduce by writing into the peer GPU's memory
 #                      (VLLM_XPU_PEER_ALLREDUCE=1, needs ext/xpu_peer;
 #                      TP=2 prefill 1451 -> 2137 tok/s at 8K)
-#                    (branch humble-b70-next)
+#                    (branch humble-b70-main-20261027)
 #   vllm-xpu-kernels upstream main (bdf9ac0; has #600)
 #                    + patches/vllm-xpu-kernels/0001
 #                    + the two source files 0001 references but never ships
@@ -32,7 +30,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE"
 
 VLLM_URL=https://github.com/stolk/vllm.git
-VLLM_SHA=9dd3b25953e5d634647b3c070c6e75f9576dd8b0
+VLLM_SHA=72d0471a1c8f20a9176f9690f9d95e29bcb70c41
 KERNELS_URL=https://github.com/stolk/vllm-xpu-kernels.git
 KERNELS_SHA=63ef9b9bf668ebfdfa871c74460b8820b6024b48
 
