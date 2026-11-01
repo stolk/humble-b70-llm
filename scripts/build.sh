@@ -8,7 +8,7 @@
 # silently skipped and only surfaced later as a confusing build error.
 # patches/ is kept as the record of the original upstream deltas.
 #
-#   vllm             upstream main 2b08392a5f (2026-10-27, torch 2.14)
+#   vllm             upstream main 8530a778f7 (2026-11-01, torch 2.14)
 #                    + production deltas: host-staged collectives, INT8
 #                      lm_head, GDN fallback for a partial final MTP group
 #                    + host-staged all-reduce through /dev/shm, not gloo
@@ -16,7 +16,7 @@
 #                    + all-reduce by writing into the peer GPU's memory
 #                      (VLLM_XPU_PEER_ALLREDUCE=1, needs ext/xpu_peer;
 #                      TP=2 prefill 1451 -> 2137 tok/s at 8K)
-#                    (branch humble-b70-main-20261027)
+#                    (branch humble-b70-main-20261101)
 #   vllm-xpu-kernels upstream main (bdf9ac0; has #600)
 #                    + patches/vllm-xpu-kernels/0001
 #                    + the two source files 0001 references but never ships
@@ -30,7 +30,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE"
 
 VLLM_URL=https://github.com/stolk/vllm.git
-VLLM_SHA=72d0471a1c8f20a9176f9690f9d95e29bcb70c41
+VLLM_SHA=e95d843f51836dd854c1e7a1c341e3cbaaf6750c
 KERNELS_URL=https://github.com/stolk/vllm-xpu-kernels.git
 KERNELS_SHA=63ef9b9bf668ebfdfa871c74460b8820b6024b48
 
@@ -133,13 +133,16 @@ KERNELS_WHEEL="dist/$(basename "${wheels[0]}")"
   https://download.pytorch.org/whl/xpu "triton-xpu==3.8.0"
 # vLLM's own compile units are light; VLLM_MAX_JOBS lets them use more cores
 # than the memory-hungry kernels build above.
-# requirements/xpu.txt names wheels.vllm.ai as an extra index (for the
-# triton==3.8.0+xpu shim, which just requires triton-xpu), but pip ignores
-# index lines when it reads requirements through setup.py. Pass it here.
+# requirements/xpu.txt names extra indexes: wheels.vllm.ai (for the
+# triton==3.8.0+xpu shim, which just requires triton-xpu) and the
+# vllm-xpu-kernels release index (the only one with its pinned
+# vllm_xpu_kernels==0.1.16, replaced by $KERNELS_WHEEL below). pip ignores
+# index lines when it reads requirements through setup.py. Pass them here.
 MAX_JOBS="${VLLM_MAX_JOBS:-$MAX_JOBS}" \
   "$HERE/.venv/bin/pip" install --no-build-isolation \
     --extra-index-url https://wheels.vllm.ai/xpu/ \
     --extra-index-url https://download.pytorch.org/whl/xpu \
+    --extra-index-url https://vllm-project.github.io/vllm-xpu-kernels/whl \
     -e src/vllm
 "$HERE/.venv/bin/pip" install --force-reinstall --no-deps "$KERNELS_WHEEL"
 # 6. oneCCL 2022.1.2 over torch 2.14's exact pin (2022.1.1). In 2022.1.1 an
